@@ -26,21 +26,32 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Перевіряємо наявність тимчасової директорії
-const tmpDir = os.tmpdir();
-async function ensureTempDir() {
+// Створюємо базову директорію для збереження файлів
+const STORAGE_BASE =
+  process.env.NODE_ENV === "production"
+    ? path.join(process.cwd(), "public", "processed_images")
+    : path.join(process.env.HOME || process.env.USERPROFILE, "Downloads");
+
+// Додаємо статичний роут для доступу до оброблених зображень
+app.use(
+  "/processed_images",
+  express.static(path.join(process.cwd(), "public", "processed_images"))
+);
+
+// Перевіряємо наявність директорії для збереження
+async function ensureStorageDir() {
   try {
-    await fs.access(tmpDir);
+    await fs.access(STORAGE_BASE);
   } catch (error) {
-    console.error("Error accessing temp directory:", error);
-    process.exit(1);
+    await fs.mkdir(STORAGE_BASE, { recursive: true });
+    console.log(`Created storage directory: ${STORAGE_BASE}`);
   }
 }
 
 // Налаштування multer для тимчасового збереження файлів
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, tmpDir);
+    cb(null, os.tmpdir());
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
@@ -220,50 +231,23 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
       return res.status(400).json({ error: "Watermark text is required" });
     }
 
-    // Додаємо © перед текстом, якщо його там ще немає
     const watermarkText = req.body.watermarkText.trim().startsWith("©")
       ? req.body.watermarkText.trim()
       : `© ${req.body.watermarkText.trim()}`;
 
-    // В продакшені використовуємо тимчасову директорію
-    const outputBaseDir =
-      process.env.NODE_ENV === "production"
-        ? path.join(tmpDir, "processed_images")
-        : path.join(process.env.HOME || process.env.USERPROFILE, "Downloads");
-
-    console.log("Output directory:", outputBaseDir);
-
-    // Перевіряємо доступ до директорії
-    const hasAccess = await checkDirectoryAccess(tmpDir);
-    if (!hasAccess) {
-      throw new Error(`No access to temporary directory: ${tmpDir}`);
-    }
-
     const currentDate = new Date().toISOString().split("T")[0];
     const targetFolder = path.join(
-      outputBaseDir,
+      STORAGE_BASE,
       `processed_images_${currentDate}`
     );
 
     await fs.mkdir(targetFolder, { recursive: true });
     console.log(`Created target folder: ${targetFolder}`);
 
-    // Перевіряємо доступ до створеної директорії
-    const hasTargetAccess = await checkDirectoryAccess(targetFolder);
-    if (!hasTargetAccess) {
-      throw new Error(`No access to target directory: ${targetFolder}`);
-    }
-
     const results = [];
     for (const file of req.files) {
       try {
         console.log(`Processing file: ${file.originalname}`);
-        console.log(`File details:`, {
-          size: file.size,
-          path: file.path,
-          mimetype: file.mimetype,
-        });
-
         const processedImages = {};
 
         for (const [configName, config] of Object.entries(imageConfigs)) {
@@ -275,10 +259,23 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
               targetFolder,
               watermarkText
             );
-            processedImages[configName] = outputPath;
+            // Змінюємо шлях для відповіді на URL
+            const relativePath = path.relative(
+              path.join(process.cwd(), "public"),
+              outputPath
+            );
+            const publicUrl =
+              process.env.NODE_ENV === "production"
+                ? `https://opimizer.onrender.com/${relativePath.replace(
+                    /\\/g,
+                    "/"
+                  )}`
+                : `file://${outputPath}`;
+
+            processedImages[configName] = publicUrl;
             console.log(
               `Successfully processed ${configName} version:`,
-              outputPath
+              publicUrl
             );
           } catch (error) {
             logError(`processImage(${configName})`, error);
@@ -288,17 +285,14 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
 
         results.push({
           originalName: file.originalname,
-          folder: targetFolder,
+          folder:
+            process.env.NODE_ENV === "production"
+              ? `https://opimizer.onrender.com/processed_images/processed_images_${currentDate}`
+              : targetFolder,
           processed: processedImages,
         });
 
-        // Видаляємо тимчасовий файл
-        try {
-          await fs.unlink(file.path);
-          console.log(`Deleted temporary file: ${file.path}`);
-        } catch (unlinkError) {
-          logError(`unlink(${file.path})`, unlinkError);
-        }
+        await fs.unlink(file.path);
       } catch (error) {
         logError(`Processing file ${file.originalname}`, error);
         results.push({
@@ -309,10 +303,6 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
     }
 
     if (results.length > 0) {
-      console.log(
-        "Processing completed. Results:",
-        JSON.stringify(results, null, 2)
-      );
       res.json(results);
     } else {
       throw new Error("Failed to process any images");
@@ -325,7 +315,7 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
         process.env.NODE_ENV === "development"
           ? error.message
           : "Internal server error",
-      requestId: Date.now(), // Для відслідковування помилки в логах
+      requestId: Date.now(),
     });
   }
 });
@@ -362,18 +352,17 @@ app.get("/open-folder", (req, res) => {
       nodeEnv: process.env.NODE_ENV || "development",
       platform: process.platform,
       nodeVersion: process.version,
-      tmpDir,
+      storageBase: STORAGE_BASE,
       cwd: process.cwd(),
       uid: process.getuid?.(),
       gid: process.getgid?.(),
     });
 
-    await ensureTempDir();
+    await ensureStorageDir();
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
       console.log(`Server is running on port ${PORT}`);
-      console.log(`Environment: ${process.env.NODE_ENV || "development"}`);
-      console.log(`Temp directory: ${tmpDir}`);
+      console.log(`Storage directory: ${STORAGE_BASE}`);
     });
   } catch (error) {
     logError("Server startup", error);
