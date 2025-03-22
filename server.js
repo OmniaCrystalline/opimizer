@@ -26,11 +26,8 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Створюємо базову директорію для збереження файлів
-const STORAGE_BASE =
-  process.env.NODE_ENV === "production"
-    ? path.join(process.cwd(), "public", "processed_images")
-    : path.join(process.env.HOME || process.env.USERPROFILE, "Downloads");
+// Завжди використовуємо Downloads/processed_images для збереження файлів
+const STORAGE_BASE = path.join(os.homedir(), "Downloads", "processed_images");
 
 // Додаємо статичний роут для доступу до оброблених зображень
 app.use(
@@ -42,7 +39,9 @@ app.use(
 async function ensureStorageDir() {
   try {
     await fs.access(STORAGE_BASE);
+    console.log(`Storage directory exists: ${STORAGE_BASE}`);
   } catch (error) {
+    // Якщо директорії немає - створюємо її
     await fs.mkdir(STORAGE_BASE, { recursive: true });
     console.log(`Created storage directory: ${STORAGE_BASE}`);
   }
@@ -236,10 +235,7 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
       : `© ${req.body.watermarkText.trim()}`;
 
     const currentDate = new Date().toISOString().split("T")[0];
-    const targetFolder = path.join(
-      STORAGE_BASE,
-      `processed_images_${currentDate}`
-    );
+    const targetFolder = path.join(STORAGE_BASE, currentDate);
 
     await fs.mkdir(targetFolder, { recursive: true });
     console.log(`Created target folder: ${targetFolder}`);
@@ -259,23 +255,13 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
               targetFolder,
               watermarkText
             );
-            // Змінюємо шлях для відповіді на URL
-            const relativePath = path.relative(
-              path.join(process.cwd(), "public"),
-              outputPath
-            );
-            const publicUrl =
-              process.env.NODE_ENV === "production"
-                ? `https://opimizer.onrender.com/${relativePath.replace(
-                    /\\/g,
-                    "/"
-                  )}`
-                : `file://${outputPath}`;
 
-            processedImages[configName] = publicUrl;
+            // Завжди використовуємо file:// для локальних файлів
+            const fileUrl = `file://${outputPath}`;
+            processedImages[configName] = fileUrl;
             console.log(
               `Successfully processed ${configName} version:`,
-              publicUrl
+              fileUrl
             );
           } catch (error) {
             logError(`processImage(${configName})`, error);
@@ -285,10 +271,7 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
 
         results.push({
           originalName: file.originalname,
-          folder:
-            process.env.NODE_ENV === "production"
-              ? `https://opimizer.onrender.com/processed_images/processed_images_${currentDate}`
-              : targetFolder,
+          folder: targetFolder,
           processed: processedImages,
         });
 
