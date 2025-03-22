@@ -255,7 +255,7 @@
         <h1>Обробка зображень</h1>
         <label class="input-label" for="watermarkText">Текст вотермарки:</label>
         <input type="text" id="watermarkText" class="watermark-input" placeholder="Введіть текст для вотермарки"
-            value="© My Company">
+            required>
         <div class="drop-zone" id="dropZone">
             <p>Перетягніть файли сюди або клікніть для вибору</p>
             <input type="file" id="fileInput" multiple accept="image/*" style="display: none">
@@ -362,12 +362,18 @@
         });
 
         uploadButton.addEventListener('click', async () => {
+            const watermarkText = watermarkInput.value.trim();
+            if (!watermarkText) {
+                alert('Будь ласка, введіть текст для вотермарки');
+                return;
+            }
+
             try {
                 const formData = new FormData();
                 selectedFiles.forEach(file => {
                     formData.append('images', file);
                 });
-                formData.append('watermarkText', watermarkInput.value || '© My Company');
+                formData.append('watermarkText', watermarkText);
 
                 uploadButton.disabled = true;
                 uploadButton.textContent = 'Обробка...';

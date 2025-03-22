@@ -11,6 +11,7 @@ const { exec } = require("child_process");
 
 const app = express();
 
+// Налаштування CORS для продакшену
 const corsOptions = {
   origin:
     process.env.NODE_ENV === "production"
@@ -159,23 +160,84 @@ async function processImage(file, config, targetFolder, watermarkText) {
   }
 }
 
+// Функція для логування помилок
+function logError(context, error) {
+  console.error(`=== Error in ${context} ===`);
+  console.error("Message:", error.message);
+  console.error("Stack:", error.stack);
+  console.error("Additional info:", {
+    platform: process.platform,
+    nodeVersion: process.version,
+    env: process.env.NODE_ENV,
+    tmpDir: os.tmpdir(),
+    freeMemory: os.freemem(),
+    totalMemory: os.totalmem(),
+  });
+  console.error("========================");
+}
+
+// Перевіряємо права доступу до директорій
+async function checkDirectoryAccess(dir) {
+  try {
+    await fs.access(dir, fs.constants.R_OK | fs.constants.W_OK);
+    const stats = await fs.stat(dir);
+    console.log(`Directory ${dir} access check:`, {
+      readable: true,
+      writable: true,
+      isDirectory: stats.isDirectory(),
+      mode: stats.mode,
+      uid: stats.uid,
+      gid: stats.gid,
+    });
+    return true;
+  } catch (error) {
+    logError(`checkDirectoryAccess(${dir})`, error);
+    return false;
+  }
+}
+
 // Оновлюємо маршрут для обробки зображень
 app.post("/process-images", upload.array("images"), async (req, res) => {
   try {
-    console.log("Processing request received");
-    console.log("Files:", req.files);
+    console.log("=== New request received ===");
+    console.log("Headers:", req.headers);
+    console.log("Body:", req.body);
+    console.log(
+      "Files:",
+      req.files?.map((f) => ({
+        name: f.originalname,
+        size: f.size,
+        mimetype: f.mimetype,
+        path: f.path,
+      }))
+    );
 
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ error: "No files uploaded" });
     }
 
-    const watermarkText = req.body.watermarkText || "© My Company";
+    if (!req.body.watermarkText) {
+      return res.status(400).json({ error: "Watermark text is required" });
+    }
+
+    // Додаємо © перед текстом, якщо його там ще немає
+    const watermarkText = req.body.watermarkText.trim().startsWith("©")
+      ? req.body.watermarkText.trim()
+      : `© ${req.body.watermarkText.trim()}`;
 
     // В продакшені використовуємо тимчасову директорію
     const outputBaseDir =
       process.env.NODE_ENV === "production"
         ? path.join(tmpDir, "processed_images")
         : path.join(process.env.HOME || process.env.USERPROFILE, "Downloads");
+
+    console.log("Output directory:", outputBaseDir);
+
+    // Перевіряємо доступ до директорії
+    const hasAccess = await checkDirectoryAccess(tmpDir);
+    if (!hasAccess) {
+      throw new Error(`No access to temporary directory: ${tmpDir}`);
+    }
 
     const currentDate = new Date().toISOString().split("T")[0];
     const targetFolder = path.join(
@@ -184,21 +246,44 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
     );
 
     await fs.mkdir(targetFolder, { recursive: true });
+    console.log(`Created target folder: ${targetFolder}`);
+
+    // Перевіряємо доступ до створеної директорії
+    const hasTargetAccess = await checkDirectoryAccess(targetFolder);
+    if (!hasTargetAccess) {
+      throw new Error(`No access to target directory: ${targetFolder}`);
+    }
 
     const results = [];
     for (const file of req.files) {
       try {
         console.log(`Processing file: ${file.originalname}`);
+        console.log(`File details:`, {
+          size: file.size,
+          path: file.path,
+          mimetype: file.mimetype,
+        });
+
         const processedImages = {};
 
         for (const [configName, config] of Object.entries(imageConfigs)) {
-          const outputPath = await processImage(
-            file,
-            config,
-            targetFolder,
-            watermarkText
-          );
-          processedImages[configName] = outputPath;
+          try {
+            console.log(`Processing ${configName} version...`);
+            const outputPath = await processImage(
+              file,
+              config,
+              targetFolder,
+              watermarkText
+            );
+            processedImages[configName] = outputPath;
+            console.log(
+              `Successfully processed ${configName} version:`,
+              outputPath
+            );
+          } catch (error) {
+            logError(`processImage(${configName})`, error);
+            processedImages[configName] = { error: error.message };
+          }
         }
 
         results.push({
@@ -208,10 +293,14 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
         });
 
         // Видаляємо тимчасовий файл
-        await fs.unlink(file.path);
+        try {
+          await fs.unlink(file.path);
+          console.log(`Deleted temporary file: ${file.path}`);
+        } catch (unlinkError) {
+          logError(`unlink(${file.path})`, unlinkError);
+        }
       } catch (error) {
-        console.error(`Error processing file ${file.originalname}:`, error);
-        // Додаємо помилку до результатів
+        logError(`Processing file ${file.originalname}`, error);
         results.push({
           originalName: file.originalname,
           error: error.message,
@@ -220,16 +309,23 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
     }
 
     if (results.length > 0) {
+      console.log(
+        "Processing completed. Results:",
+        JSON.stringify(results, null, 2)
+      );
       res.json(results);
     } else {
-      res.status(500).json({ error: "Failed to process any images" });
+      throw new Error("Failed to process any images");
     }
   } catch (error) {
-    console.error("Error in process-images route:", error);
+    logError("process-images route", error);
     res.status(500).json({
       error: "Error processing images",
       details:
-        process.env.NODE_ENV === "development" ? error.message : undefined,
+        process.env.NODE_ENV === "development"
+          ? error.message
+          : "Internal server error",
+      requestId: Date.now(), // Для відслідковування помилки в логах
     });
   }
 });
@@ -261,6 +357,17 @@ app.get("/open-folder", (req, res) => {
 // Запускаємо сервер
 (async () => {
   try {
+    console.log("=== Server starting ===");
+    console.log("Environment:", {
+      nodeEnv: process.env.NODE_ENV || "development",
+      platform: process.platform,
+      nodeVersion: process.version,
+      tmpDir,
+      cwd: process.cwd(),
+      uid: process.getuid?.(),
+      gid: process.getgid?.(),
+    });
+
     await ensureTempDir();
     const PORT = process.env.PORT || 3000;
     app.listen(PORT, () => {
@@ -269,7 +376,7 @@ app.get("/open-folder", (req, res) => {
       console.log(`Temp directory: ${tmpDir}`);
     });
   } catch (error) {
-    console.error("Error during server startup:", error);
+    logError("Server startup", error);
     process.exit(1);
   }
 })();
