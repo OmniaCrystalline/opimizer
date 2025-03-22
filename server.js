@@ -11,13 +11,15 @@ const { exec } = require("child_process");
 
 const app = express();
 
-// Налаштування CORS для продакшену
 const corsOptions = {
   origin:
     process.env.NODE_ENV === "production"
-      ? ["https://opimizer.onrender.com/"] 
+      ? ["https://opimizer.onrender.com", "http://localhost:3000"]
       : ["http://localhost:3000"],
   optionsSuccessStatus: 200,
+  methods: ["GET", "POST"],
+  allowedHeaders: ["Content-Type"],
+  credentials: true,
 };
 
 app.use(cors(corsOptions));
