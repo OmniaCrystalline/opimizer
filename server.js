@@ -8,6 +8,8 @@ const path = require("path");
 const fs = require("fs").promises;
 const os = require("os");
 const { exec } = require("child_process");
+const archiver = require("archiver");
+const fsSync = require("fs");
 
 const app = express();
 
@@ -209,6 +211,23 @@ async function checkDirectoryAccess(dir) {
   }
 }
 
+// Функція для створення ZIP-архіву з папки
+async function createZipFromFolder(folderPath, zipPath) {
+  return new Promise((resolve, reject) => {
+    const output = fsSync.createWriteStream(zipPath);
+    const archive = archiver("zip", {
+      zlib: { level: 9 },
+    });
+
+    output.on("close", () => resolve(zipPath));
+    archive.on("error", reject);
+
+    archive.pipe(output);
+    archive.directory(folderPath, false);
+    archive.finalize();
+  });
+}
+
 // Оновлюємо маршрут для обробки зображень
 app.post("/process-images", upload.array("images"), async (req, res) => {
   try {
@@ -237,15 +256,12 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
       ? req.body.watermarkText.trim()
       : `© ${req.body.watermarkText.trim()}`;
 
-    const currentDate = new Date().toISOString().split("T")[0];
+    // Створюємо тимчасову папку для обробки
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const targetFolder = path.join(STORAGE_BASE, currentDate, timestamp);
-
-    await fs.mkdir(targetFolder, { recursive: true });
-    console.log(`Created target folder: ${targetFolder}`);
+    const tempFolder = path.join(os.tmpdir(), `processing_${timestamp}`);
+    await fs.mkdir(tempFolder, { recursive: true });
 
     const results = [];
-    const downloadUrls = [];
 
     for (const file of req.files) {
       try {
@@ -258,22 +274,11 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
             const outputPath = await processImage(
               file,
               config,
-              targetFolder,
+              tempFolder,
               watermarkText
             );
 
-            if (process.env.NODE_ENV === "production") {
-              // На продакшені створюємо URL для завантаження
-              const downloadUrl = `/download?file=${encodeURIComponent(
-                outputPath
-              )}`;
-              processedImages[configName] = downloadUrl;
-              downloadUrls.push(outputPath);
-            } else {
-              // Локально використовуємо file:// протокол
-              processedImages[configName] = `file://${outputPath}`;
-            }
-
+            processedImages[configName] = outputPath;
             console.log(`Successfully processed ${configName} version`);
           } catch (error) {
             logError(`processImage(${configName})`, error);
@@ -283,7 +288,6 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
 
         results.push({
           originalName: file.originalname,
-          folder: process.env.NODE_ENV === "production" ? null : targetFolder,
           processed: processedImages,
         });
 
@@ -298,12 +302,33 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
     }
 
     if (results.length > 0) {
-      if (process.env.NODE_ENV === "production") {
-        // На продакшені зберігаємо шляхи до файлів в сесії
-        req.session = req.session || {};
-        req.session.downloadUrls = downloadUrls;
+      // Створюємо ZIP-архів
+      const zipFileName = `processed_images_${timestamp}.zip`;
+      const zipPath = path.join(os.tmpdir(), zipFileName);
+
+      await createZipFromFolder(tempFolder, zipPath);
+
+      // Видаляємо тимчасову папку з обробленими файлами
+      try {
+        await fs.rm(tempFolder, { recursive: true });
+        console.log(`Deleted temp folder: ${tempFolder}`);
+      } catch (error) {
+        console.error(`Error deleting temp folder: ${error.message}`);
       }
-      res.json(results);
+
+      // Відправляємо ZIP-файл
+      res.download(zipPath, zipFileName, async (error) => {
+        if (error) {
+          logError("download", error);
+        }
+        // Видаляємо ZIP-файл після відправки
+        try {
+          await fs.unlink(zipPath);
+          console.log(`Deleted ZIP file: ${zipPath}`);
+        } catch (unlinkError) {
+          console.error(`Error deleting ZIP file: ${unlinkError.message}`);
+        }
+      });
     } else {
       throw new Error("Failed to process any images");
     }

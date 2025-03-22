@@ -408,8 +408,30 @@
                     body: formData
                 });
 
-                const results = await response.json();
-                displayResults(results);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                // Перевіряємо тип відповіді
+                const contentType = response.headers.get("content-type");
+                if (contentType && contentType.includes("application/zip")) {
+                    // Якщо це ZIP-файл, створюємо посилання для автоматичного завантаження
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.style.display = "none";
+                    a.href = url;
+                    a.download = response.headers.get("content-disposition")?.split("filename=")[1]?.replace(/"/g, "") || "processed_images.zip";
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+
+                    resultContainer.innerHTML = "<p>Завантаження архіву з обробленими зображеннями почалось автоматично.</p>";
+                } else {
+                    const results = await response.json();
+                    displayResults(results);
+                }
 
                 selectedFiles.clear();
                 fileInput.value = '';
