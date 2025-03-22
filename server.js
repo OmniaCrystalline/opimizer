@@ -15,7 +15,7 @@ const app = express();
 const corsOptions = {
   origin:
     process.env.NODE_ENV === "production"
-      ? ["https://yourdomain.com"] // Замініть на ваш домен
+      ? ["https://opimizer.onrender.com/"] 
       : ["http://localhost:3000"],
   optionsSuccessStatus: 200,
 };
