@@ -281,6 +281,11 @@
         const selectedFilesCount = document.getElementById('selectedFilesCount');
         const watermarkInput = document.getElementById('watermarkText');
 
+        // Визначаємо API URL в залежності від хоста
+        const API_URL = window.location.hostname === 'localhost'
+            ? 'http://localhost:3000'
+            : 'https://opimizer.onrender.com';
+
         let selectedFiles = new Map();
 
         // Обробка перетягування
@@ -380,7 +385,7 @@
                 uploadButton.classList.add('loading');
                 clearButton.disabled = true;
 
-                const response = await fetch(`${'https://opimizer.onrender.com' || 'http://localhost:3000'}/process-images`, {
+                const response = await fetch(`${API_URL}/process-images`, {
                     method: 'POST',
                     body: formData
                 });
@@ -453,7 +458,7 @@
 
         function openFolder(folderPath) {
             event.preventDefault();
-            fetch(`http://localhost:3000/open-folder?path=${encodeURIComponent(folderPath)}`);
+            fetch(`${API_URL}/open-folder?path=${encodeURIComponent(folderPath)}`);
         }
     </script>
 </body>
