@@ -247,6 +247,24 @@
             color: #495057;
             font-size: 1.1em;
         }
+
+        .download-group {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #e9ecef;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+        }
+
+        .download-group .filename {
+            margin: 0 0 8px 0;
+            color: #495057;
+            font-size: 0.9em;
+        }
+
+        .download-group .download-link {
+            margin: 4px 8px 4px 0;
+        }
     </style>
 </head>
 
@@ -412,45 +430,51 @@
         function displayResults(results) {
             if (results.length === 0) return;
 
-            // Беремо папку з першого результату, вона буде однакова для всіх
+            const isProduction = window.location.hostname !== 'localhost';
             const targetFolder = results[0].folder;
 
             resultContainer.innerHTML = `
                 <h2>Результати обробки:</h2>
                 <div class="result-item">
                     <p>Оброблено зображень: ${results.length}</p>
-                    <p>Зображення збережені в папці: ${targetFolder}</p>
-                    <div class="button-group">
-                        <a href="file://${targetFolder}" class="download-link" onclick="openFolder('${targetFolder}')">
-                            <span>Відкрити папку з результатами</span>
-                        </a>
-                    </div>
+                    ${!isProduction ? `<p>Зображення збережені в папці: ${targetFolder}</p>` : ''}
+                    ${!isProduction ? `
+                        <div class="button-group">
+                            <a href="file://${targetFolder}" class="download-link" onclick="openFolder('${targetFolder}')">
+                                <span>Відкрити папку з результатами</span>
+                            </a>
+                        </div>
+                    ` : ''}
                     <div class="size-group">
                         <h3>Великі зображення (1920x1080):</h3>
                         <div class="button-group">
-                            <a href="file://${targetFolder}/1920x1080" class="download-link" onclick="openFolder('${targetFolder}/1920x1080')">
-                                <span>Звичайна версія</span>
-                            </a>
-                            <a href="file://${targetFolder}/3840x2160" class="download-link" onclick="openFolder('${targetFolder}/3840x2160')">
-                                <span>Ретіна версія (@2x)</span>
-                            </a>
+                            ${results.map(result => `
+                                <div class="download-group">
+                                    <p class="filename">${result.originalName}</p>
+                                    <a href="${result.processed.hero}" class="download-link" ${isProduction ? 'download' : `onclick="openFolder('${targetFolder}/1920x1080')"`}>
+                                        <span>Звичайна версія</span>
+                                    </a>
+                                    <a href="${result.processed.heroRetina}" class="download-link" ${isProduction ? 'download' : `onclick="openFolder('${targetFolder}/3840x2160')"`}>
+                                        <span>Ретіна версія (@2x)</span>
+                                    </a>
+                                </div>
+                            `).join('')}
                         </div>
                         
                         <h3>Малі зображення (400x300):</h3>
                         <div class="button-group">
-                            <a href="file://${targetFolder}/400x300" class="download-link" onclick="openFolder('${targetFolder}/400x300')">
-                                <span>Звичайна версія</span>
-                            </a>
-                            <a href="file://${targetFolder}/800x600" class="download-link" onclick="openFolder('${targetFolder}/800x600')">
-                                <span>Ретіна версія (@2x)</span>
-                            </a>
+                            ${results.map(result => `
+                                <div class="download-group">
+                                    <p class="filename">${result.originalName}</p>
+                                    <a href="${result.processed.card}" class="download-link" ${isProduction ? 'download' : `onclick="openFolder('${targetFolder}/400x300')"`}>
+                                        <span>Звичайна версія</span>
+                                    </a>
+                                    <a href="${result.processed.cardRetina}" class="download-link" ${isProduction ? 'download' : `onclick="openFolder('${targetFolder}/800x600')"`}>
+                                        <span>Ретіна версія (@2x)</span>
+                                    </a>
+                                </div>
+                            `).join('')}
                         </div>
-                    </div>
-                    <div class="processed-files">
-                        <h3>Оброблені файли:</h3>
-                        <ul>
-                            ${results.map(result => `<li>${result.originalName}</li>`).join('')}
-                        </ul>
                     </div>
                 </div>
             `;

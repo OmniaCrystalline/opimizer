@@ -26,8 +26,11 @@ const corsOptions = {
 app.use(cors(corsOptions));
 app.use(express.json());
 
-// Завжди використовуємо Downloads/processed_images для збереження файлів
-const STORAGE_BASE = path.join(os.homedir(), "Downloads", "processed_images");
+// Визначаємо базову директорію в залежності від середовища
+const STORAGE_BASE =
+  process.env.NODE_ENV === "production"
+    ? path.join(os.tmpdir(), "processed_images")
+    : path.join(os.homedir(), "Downloads", "processed_images");
 
 // Додаємо статичний роут для доступу до оброблених зображень
 app.use(
@@ -241,6 +244,8 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
     console.log(`Created target folder: ${targetFolder}`);
 
     const results = [];
+    const downloadUrls = [];
+
     for (const file of req.files) {
       try {
         console.log(`Processing file: ${file.originalname}`);
@@ -256,13 +261,19 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
               watermarkText
             );
 
-            // Завжди використовуємо file:// для локальних файлів
-            const fileUrl = `file://${outputPath}`;
-            processedImages[configName] = fileUrl;
-            console.log(
-              `Successfully processed ${configName} version:`,
-              fileUrl
-            );
+            if (process.env.NODE_ENV === "production") {
+              // На продакшені створюємо URL для завантаження
+              const downloadUrl = `/download?file=${encodeURIComponent(
+                outputPath
+              )}`;
+              processedImages[configName] = downloadUrl;
+              downloadUrls.push(outputPath);
+            } else {
+              // Локально використовуємо file:// протокол
+              processedImages[configName] = `file://${outputPath}`;
+            }
+
+            console.log(`Successfully processed ${configName} version`);
           } catch (error) {
             logError(`processImage(${configName})`, error);
             processedImages[configName] = { error: error.message };
@@ -271,7 +282,7 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
 
         results.push({
           originalName: file.originalname,
-          folder: targetFolder,
+          folder: process.env.NODE_ENV === "production" ? null : targetFolder,
           processed: processedImages,
         });
 
@@ -286,6 +297,11 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
     }
 
     if (results.length > 0) {
+      if (process.env.NODE_ENV === "production") {
+        // На продакшені зберігаємо шляхи до файлів в сесії
+        req.session = req.session || {};
+        req.session.downloadUrls = downloadUrls;
+      }
       res.json(results);
     } else {
       throw new Error("Failed to process any images");
@@ -300,6 +316,49 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
           : "Internal server error",
       requestId: Date.now(),
     });
+  }
+});
+
+// Додаємо маршрут для завантаження файлів
+app.get("/download", async (req, res) => {
+  try {
+    const filePath = req.query.file;
+    if (!filePath) {
+      return res.status(400).json({ error: "File path not specified" });
+    }
+
+    // Перевіряємо чи файл існує
+    try {
+      await fs.access(filePath);
+    } catch (error) {
+      return res.status(404).json({ error: "File not found" });
+    }
+
+    // Отримуємо ім'я файлу
+    const fileName = path.basename(filePath);
+
+    // Відправляємо файл
+    res.download(filePath, fileName, async (error) => {
+      if (error) {
+        logError("download", error);
+        if (!res.headersSent) {
+          res.status(500).json({ error: "Error downloading file" });
+        }
+      }
+
+      // Видаляємо файл після відправки
+      if (process.env.NODE_ENV === "production") {
+        try {
+          await fs.unlink(filePath);
+          console.log(`Deleted file after download: ${filePath}`);
+        } catch (unlinkError) {
+          console.error(`Error deleting file: ${unlinkError.message}`);
+        }
+      }
+    });
+  } catch (error) {
+    logError("download route", error);
+    res.status(500).json({ error: "Error processing download request" });
   }
 });
 
