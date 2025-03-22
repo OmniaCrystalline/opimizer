@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="uk">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Обробка зображень</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+
+        .upload-container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .drop-zone {
+            border: 2px dashed #ccc;
+            border-radius: 4px;
+            padding: 20px;
+            text-align: center;
+            margin: 20px 0;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .drop-zone:hover,
+        .drop-zone.dragover {
+            border-color: #007bff;
+            background-color: #f8f9fa;
+        }
+
+        .preview-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .preview-item {
+            position: relative;
+            background: white;
+            padding: 10px;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .preview-item img {
+            width: 100%;
+            height: 150px;
+            object-fit: cover;
+            border-radius: 4px;
+        }
+
+        .preview-item p {
+            margin: 10px 0 0;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .remove-btn {
+            position: absolute;
+            top: -10px;
+            right: -10px;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #dc3545;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            line-height: 1;
+        }
+
+        .button-container {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+
+        .upload-btn,
+        .clear-btn,
+        .refresh-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .upload-btn {
+            background-color: #28a745;
+            color: white;
+        }
+
+        .upload-btn:hover:not(:disabled) {
+            background-color: #218838;
+        }
+
+        .clear-btn {
+            background-color: #dc3545;
+            color: white;
+        }
+
+        .clear-btn:hover:not(:disabled) {
+            background-color: #c82333;
+        }
+
+        .refresh-btn {
+            background-color: #007bff;
+            color: white;
+        }
+
+        .refresh-btn:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+
+        button:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
+
+        .selected-files-count {
+            margin: 10px 0;
+            color: #666;
+        }
+
+        .result-container {
+            margin-top: 20px;
+        }
+
+        .result-item {
+            background: white;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .result-item h3 {
+            margin: 0 0 10px;
+            color: #333;
+        }
+
+        .result-item p {
+            margin: 5px 0;
+        }
+
+        .download-link {
+            display: inline-block;
+            padding: 8px 16px;
+            margin: 5px;
+            background-color: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            transition: background-color 0.3s;
+        }
+
+        .download-link:hover {
+            background-color: #0056b3;
+        }
+
+        .loading::after {
+            content: '';
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            margin-left: 10px;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .watermark-input {
+            width: 100%;
+            padding: 10px;
+            margin: 20px 0;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+
+        .watermark-input:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, .25);
+        }
+
+        .input-label {
+            display: block;
+            margin-bottom: 5px;
+            color: #495057;
+            font-weight: 500;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 15px 0;
+        }
+
+        .processed-files {
+            margin-top: 20px;
+        }
+
+        .processed-files ul {
+            list-style: none;
+            padding: 0;
+            margin: 10px 0;
+        }
+
+        .processed-files li {
+            padding: 5px 0;
+            color: #666;
+        }
+
+        .size-group {
+            margin: 20px 0;
+        }
+
+        .size-group h3 {
+            margin: 15px 0 10px;
+            color: #495057;
+            font-size: 1.1em;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="upload-container">
+        <h1>Обробка зображень</h1>
+        <label class="input-label" for="watermarkText">Текст вотермарки:</label>
+        <input type="text" id="watermarkText" class="watermark-input" placeholder="Введіть текст для вотермарки"
+            value="© My Company">
+        <div class="drop-zone" id="dropZone">
+            <p>Перетягніть файли сюди або клікніть для вибору</p>
+            <input type="file" id="fileInput" multiple accept="image/*" style="display: none">
+        </div>
+        <div class="selected-files-count" id="selectedFilesCount"></div>
+        <div class="button-container">
+            <button id="uploadButton" class="upload-btn" style="display: none;">Обробити зображення</button>
+            <button id="clearButton" class="clear-btn" style="display: none;">Очистити все</button>
+            <button id="refreshButton" class="refresh-btn">Оновити сторінку</button>
+        </div>
+        <div class="preview-container" id="previewContainer"></div>
+        <div class="result-container" id="resultContainer"></div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const uploadButton = document.getElementById('uploadButton');
+        const clearButton = document.getElementById('clearButton');
+        const refreshButton = document.getElementById('refreshButton');
+        const previewContainer = document.getElementById('previewContainer');
+        const resultContainer = document.getElementById('resultContainer');
+        const selectedFilesCount = document.getElementById('selectedFilesCount');
+        const watermarkInput = document.getElementById('watermarkText');
+
+        let selectedFiles = new Map();
+
+        // Обробка перетягування
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        dropZone.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        fileInput.addEventListener('change', () => {
+            handleFiles(fileInput.files);
+        });
+
+        function updateFileCount() {
+            const count = selectedFiles.size;
+            selectedFilesCount.textContent = count > 0
+                ? `Вибрано файлів: ${count}`
+                : '';
+            uploadButton.style.display = count > 0 ? 'block' : 'none';
+            clearButton.style.display = count > 0 ? 'block' : 'none';
+        }
+
+        function removeFile(fileId) {
+            selectedFiles.delete(fileId);
+            updateFileCount();
+            displayPreviews();
+        }
+
+        function displayPreviews() {
+            previewContainer.innerHTML = '';
+            selectedFiles.forEach((file, id) => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const preview = document.createElement('div');
+                    preview.className = 'preview-item';
+                    preview.innerHTML = `
+                        <button class="remove-btn" onclick="removeFile('${id}')">&times;</button>
+                        <img src="${e.target.result}" alt="Preview">
+                        <p>${file.name}</p>
+                    `;
+                    previewContainer.appendChild(preview);
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function handleFiles(files) {
+            Array.from(files).forEach(file => {
+                const fileId = Date.now() + Math.random().toString(36).substr(2, 9);
+                selectedFiles.set(fileId, file);
+            });
+            updateFileCount();
+            displayPreviews();
+        }
+
+        clearButton.addEventListener('click', () => {
+            selectedFiles.clear();
+            fileInput.value = '';
+            updateFileCount();
+            displayPreviews();
+            resultContainer.innerHTML = '';
+        });
+
+        refreshButton.addEventListener('click', () => {
+            location.reload();
+        });
+
+        uploadButton.addEventListener('click', async () => {
+            try {
+                const formData = new FormData();
+                selectedFiles.forEach(file => {
+                    formData.append('images', file);
+                });
+                formData.append('watermarkText', watermarkInput.value || '© My Company');
+
+                uploadButton.disabled = true;
+                uploadButton.textContent = 'Обробка...';
+                uploadButton.classList.add('loading');
+                clearButton.disabled = true;
+
+                const response = await fetch('http://localhost:3000/process-images', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const results = await response.json();
+                displayResults(results);
+
+                selectedFiles.clear();
+                fileInput.value = '';
+                updateFileCount();
+                displayPreviews();
+
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Помилка при обробці зображень');
+            } finally {
+                uploadButton.disabled = false;
+                uploadButton.textContent = 'Обробити зображення';
+                uploadButton.classList.remove('loading');
+                clearButton.disabled = false;
+            }
+        });
+
+        function displayResults(results) {
+            if (results.length === 0) return;
+
+            // Беремо папку з першого результату, вона буде однакова для всіх
+            const targetFolder = results[0].folder;
+
+            resultContainer.innerHTML = `
+                <h2>Результати обробки:</h2>
+                <div class="result-item">
+                    <p>Оброблено зображень: ${results.length}</p>
+                    <p>Зображення збережені в папці: ${targetFolder}</p>
+                    <div class="button-group">
+                        <a href="file://${targetFolder}" class="download-link" onclick="openFolder('${targetFolder}')">
+                            <span>Відкрити папку з результатами</span>
+                        </a>
+                    </div>
+                    <div class="size-group">
+                        <h3>Великі зображення (1920x1080):</h3>
+                        <div class="button-group">
+                            <a href="file://${targetFolder}/1920x1080" class="download-link" onclick="openFolder('${targetFolder}/1920x1080')">
+                                <span>Звичайна версія</span>
+                            </a>
+                            <a href="file://${targetFolder}/3840x2160" class="download-link" onclick="openFolder('${targetFolder}/3840x2160')">
+                                <span>Ретіна версія (@2x)</span>
+                            </a>
+                        </div>
+                        
+                        <h3>Малі зображення (400x300):</h3>
+                        <div class="button-group">
+                            <a href="file://${targetFolder}/400x300" class="download-link" onclick="openFolder('${targetFolder}/400x300')">
+                                <span>Звичайна версія</span>
+                            </a>
+                            <a href="file://${targetFolder}/800x600" class="download-link" onclick="openFolder('${targetFolder}/800x600')">
+                                <span>Ретіна версія (@2x)</span>
+                            </a>
+                        </div>
+                    </div>
+                    <div class="processed-files">
+                        <h3>Оброблені файли:</h3>
+                        <ul>
+                            ${results.map(result => `<li>${result.originalName}</li>`).join('')}
+                        </ul>
+                    </div>
+                </div>
+            `;
+        }
+
+        function openFolder(folderPath) {
+            event.preventDefault();
+            fetch(`http://localhost:3000/open-folder?path=${encodeURIComponent(folderPath)}`);
+        }
+    </script>
+</body>
+
+</html>
