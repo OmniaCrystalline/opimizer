@@ -88,9 +88,19 @@ const imageConfigs = {
 async function createWatermarkSvg(text) {
   const svg = `
     <svg width="500" height="100">
-      <style>
-        .text { fill: rgba(255, 255, 255, 0.5); font-size: 48px; font-family: Arial; }
-      </style>
+      <defs>
+        <style>
+          @font-face {
+            font-family: 'System';
+            src: local('Arial'), local('Helvetica');
+          }
+          .text { 
+            fill: rgba(255, 255, 255, 0.5); 
+            font-size: 48px; 
+            font-family: 'System', sans-serif;
+          }
+        </style>
+      </defs>
       <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" class="text">${text}</text>
     </svg>
   `;
