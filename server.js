@@ -238,7 +238,8 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
       : `© ${req.body.watermarkText.trim()}`;
 
     const currentDate = new Date().toISOString().split("T")[0];
-    const targetFolder = path.join(STORAGE_BASE, currentDate);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const targetFolder = path.join(STORAGE_BASE, currentDate, timestamp);
 
     await fs.mkdir(targetFolder, { recursive: true });
     console.log(`Created target folder: ${targetFolder}`);
