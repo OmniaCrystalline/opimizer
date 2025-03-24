@@ -78,10 +78,21 @@ app.get("/", (req, res) => {
 
 // Конфігурація розмірів для різних категорій
 const imageConfigs = {
+  // Горизонтальні зображення
   hero: { width: 1920, height: 1080, watermark: true },
   heroRetina: { width: 3840, height: 2160, watermark: true },
   card: { width: 400, height: 300, watermark: true },
   cardRetina: { width: 800, height: 600, watermark: true },
+  // Вертикальні зображення
+  verticalHero: { width: 1080, height: 1920, watermark: true },
+  verticalHeroRetina: { width: 2160, height: 3840, watermark: true },
+  verticalCard: { width: 300, height: 400, watermark: true },
+  verticalCardRetina: { width: 600, height: 800, watermark: true },
+  // Квадратні зображення
+  square: { width: 800, height: 800, watermark: true },
+  squareRetina: { width: 1600, height: 1600, watermark: true },
+  squareSmall: { width: 400, height: 400, watermark: true },
+  squareSmallRetina: { width: 800, height: 800, watermark: true },
 };
 
 // Функція для створення SVG вотермарки з текстом
@@ -113,25 +124,53 @@ async function createWatermarkSvg(text) {
   return tempFile;
 }
 
+// Функція для визначення орієнтації зображення
+async function getImageOrientation(filePath) {
+  const metadata = await sharp(filePath).metadata();
+  return metadata.width > metadata.height ? "horizontal" : "vertical";
+}
+
 // Функція для обробки зображення
 async function processImage(file, config, targetFolder, watermarkText) {
   try {
     const filename = path.parse(file.originalname).name;
     const timestamp = Date.now();
-    const isRetina = config.width > 1920;
+    const isRetina = config.width > 1080 || config.height > 1920;
+
     const sizeFolder = `${config.width}x${config.height}`;
     const outputDir = path.join(targetFolder, sizeFolder);
 
     await fs.mkdir(outputDir, { recursive: true });
 
     // Формуємо назву файлу з розміром та позначкою ретіни
-    const size = isRetina
-      ? config.width === 3840
-        ? "1920x1080@2x"
-        : "400x300@2x"
-      : config.width === 1920
-      ? "1920x1080"
-      : "400x300";
+    let size;
+    if (isRetina) {
+      if (config.width === config.height) {
+        size = config.width === 1600 ? "800x800@2x" : "400x400@2x";
+      } else {
+        size =
+          config.width > config.height
+            ? config.width === 3840
+              ? "1920x1080@2x"
+              : "400x300@2x"
+            : config.width === 2160
+            ? "1080x1920@2x"
+            : "300x400@2x";
+      }
+    } else {
+      if (config.width === config.height) {
+        size = config.width === 800 ? "800x800" : "400x400";
+      } else {
+        size =
+          config.width > config.height
+            ? config.width === 1920
+              ? "1920x1080"
+              : "400x300"
+            : config.width === 1080
+            ? "1080x1920"
+            : "300x400";
+      }
+    }
 
     const outputFilename = `${filename}_${size}_${timestamp}.webp`;
     const outputPath = path.join(outputDir, outputFilename);
@@ -266,6 +305,9 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
       ? req.body.watermarkText.trim()
       : `© ${req.body.watermarkText.trim()}`;
 
+    // Отримуємо вибрану орієнтацію
+    const orientation = req.body.orientation || "both";
+
     // Створюємо тимчасову папку для обробки
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const tempFolder = path.join(os.tmpdir(), `processing_${timestamp}`);
@@ -277,9 +319,26 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
       try {
         console.log(`Processing file: ${file.originalname}`);
         const processedImages = {};
+        const imageOrientation = await getImageOrientation(file.path);
 
         for (const [configName, config] of Object.entries(imageConfigs)) {
           try {
+            // Перевіряємо чи потрібно обробляти цю конфігурацію
+            const isVerticalConfig = config.height > config.width;
+            const isSquareConfig = config.height === config.width;
+
+            if (orientation !== "both") {
+              if (
+                (orientation === "horizontal" &&
+                  (isVerticalConfig || isSquareConfig)) ||
+                (orientation === "vertical" &&
+                  (!isVerticalConfig || isSquareConfig)) ||
+                (orientation === "square" && !isSquareConfig)
+              ) {
+                continue;
+              }
+            }
+
             console.log(`Processing ${configName} version...`);
             const outputPath = await processImage(
               file,
@@ -288,8 +347,10 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
               watermarkText
             );
 
-            processedImages[configName] = outputPath;
-            console.log(`Successfully processed ${configName} version`);
+            if (outputPath) {
+              processedImages[configName] = outputPath;
+              console.log(`Successfully processed ${configName} version`);
+            }
           } catch (error) {
             logError(`processImage(${configName})`, error);
             processedImages[configName] = { error: error.message };
@@ -298,6 +359,7 @@ app.post("/process-images", upload.array("images"), async (req, res) => {
 
         results.push({
           originalName: file.originalname,
+          orientation: imageOrientation,
           processed: processedImages,
         });
 
